@@ -1,0 +1,106 @@
+# TRACE-ER Explorer source configuration
+
+analytical_period:
+  start: "2019-01-01"
+  end: "2025-12-31"
+  partial_current_year: "2026"
+
+sources:
+  epa_echo:
+    label: "EPA ECHO / ECHO Exporter"
+    url: "https://echo.epa.gov/tools/data-downloads"
+    role: "compliance_history"
+    required: true
+    access_date: null
+    notes: "National facility compliance, inspections, violations, enforcement, penalties."
+
+  epa_frs:
+    label: "EPA Facility Registry Service (FRS)"
+    url: "https://www.epa.gov/frs/frs-data-download-options"
+    role: "facility_master_identity"
+    required: true
+    access_date: null
+
+  epa_frs_geospatial:
+    label: "EPA FRS Geospatial Data Download Service"
+    url: "https://www.epa.gov/frs/geospatial-data-download-service"
+    role: "facility_coordinates"
+    required: true
+    access_date: null
+
+  epa_tri:
+    label: "EPA TRI Basic Data Files"
+    url: "https://www.epa.gov/toxics-release-inventory-tri-program/tri-basic-data-files-calendar-years-1987-present"
+    role: "release_history"
+    required: true
+    access_date: null
+
+  phmsa_pipeline:
+    label: "PHMSA Pipeline Incident/Accident Data"
+    url: "https://www.phmsa.dot.gov/data-and-statistics/pipeline/distribution-transmission-gathering-lng-and-liquid-accident-and-incident-data"
+    role: "incident_history"
+    required: true
+    access_date: null
+
+  usgs_water:
+    label: "USGS Water Data / Water Quality Portal"
+    url: "https://api.waterdata.usgs.gov/docs/"
+    role: "water_quality_context"
+    required: false
+    access_date: null
+
+  texas_rrc_production:
+    label: "Texas RRC Oil & Gas Production Data"
+    url: "https://www.rrc.texas.gov/oil-and-gas/research-and-statistics/production-data/"
+    role: "operational_context"
+    state: "TX"
+    required: true
+    access_date: null
+
+  texas_rrc_gis:
+    label: "Texas RRC Public GIS Viewer"
+    url: "https://www.rrc.texas.gov/resource-center/research/gis-viewer/"
+    role: "geospatial_context"
+    state: "TX"
+    required: true
+    access_date: null
+
+  tceq_environmental:
+    label: "TCEQ Raw Environmental Data Downloads"
+    url: "https://www.tceq.texas.gov/agency/data/lookup-data/download-data.html"
+    role: "state_environmental_events"
+    state: "TX"
+    required: true
+    access_date: null
+
+  pa_dep_oil_gas:
+    label: "Pennsylvania DEP Oil and Gas Reports"
+    url: "https://www.pa.gov/agencies/dep/data-and-tools/reports/oil-and-gas-reports"
+    role: "state_validation_module"
+    state: "PA"
+    required: true
+    access_date: null
+
+  nm_ocd:
+    label: "New Mexico OCD Data / Statistics"
+    url: "https://www.emnrd.nm.gov/ocd/ocd-data/"
+    role: "state_validation_module"
+    state: "NM"
+    required: true
+    access_date: null
+
+  maine_dep:
+    label: "Maine DEP Maps and Data"
+    url: "https://www.maine.gov/dep/maps-data/index.html"
+    role: "optional_case_study"
+    state: "ME"
+    required: false
+    access_date: null
+
+  maine_dep_gis:
+    label: "Maine DEP GIS Maps & Data Files"
+    url: "https://www3.maine.gov/dep/gis/datamaps/"
+    role: "optional_case_study_geospatial"
+    state: "ME"
+    required: false
+    access_date: null
