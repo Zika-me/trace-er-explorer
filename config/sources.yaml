@@ -1,5 +1,6 @@
 # TRACE-ER Explorer source configuration
 
+
 analytical_period:
   start: "2019-01-01"
   end: "2025-12-31"
@@ -20,6 +21,14 @@ sources:
     role: "facility_master_identity"
     required: true
     access_date: null
+    # Verified by fetching the live EPA pages directly on 2026-09-11.
+    # Two products exist; MVP uses the single-file product because it's
+    # already flat (no relational joins needed for facility_site).
+    direct_download_url: "https://ordsext.epa.gov/FLA/www3/state_files/national_single.zip"
+    direct_download_url_verified: "2026-09-11"
+    direct_download_url_source_page: "https://www.epa.gov/frs/epa-frs-facilities-state-single-file-csv-download"
+    alternate_combined_download_url: "https://ordsext.epa.gov/FLA/www3/state_files/national_combined.zip"
+    alternate_combined_notes: "732 MB, multiple relational CSVs (adds organizations, contacts, mailing address, alternative names). Switch to this only if the single-file product turns out to lack a field the project needs."
 
   epa_frs_geospatial:
     label: "EPA FRS Geospatial Data Download Service"
