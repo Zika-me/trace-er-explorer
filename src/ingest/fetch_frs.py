@@ -51,8 +51,18 @@ COLUMN_CANDIDATES = {
     "longitude": ["LONGITUDE83", "LONGITUDE", "FAC_LONG", "LONG_DD"],
     "state": ["STATE_CODE", "FAC_STATE", "STATE_ABBR", "STATE"],
     "county": ["COUNTY_NAME", "FAC_COUNTY"],
-    "naics": ["PRIMARY_NAICS_CODE", "NAICS_CODE"],
-    "sic": ["PRIMARY_SIC_CODE", "SIC_CODE"],
+    "naics_codes_raw": ["NAICS_CODES", "PRIMARY_NAICS_CODE", "NAICS_CODE"],
+    "sic_codes_raw": ["SIC_CODES", "PRIMARY_SIC_CODE", "SIC_CODE"],
+    "address": ["LOCATION_ADDRESS", "FAC_ADDRESS"],
+    "city": ["CITY_NAME", "FAC_CITY"],
+    "postal_code": ["POSTAL_CODE", "FAC_ZIP"],
+    "programs_raw": ["PGM_SYS_ACRNMS", "PROGRAMS"],
+    "site_type": ["SITE_TYPE_NAME"],
+    "huc_code": ["HUC_CODE"],
+    "coord_accuracy_value": ["ACCURACY_VALUE"],
+    "coord_collect_method": ["COLLECT_DESC"],
+    "coord_reference_point": ["REF_POINT_DESC"],
+    "coord_datum": ["HDATUM_DESC"],
 }
 
 
