@@ -1,0 +1,180 @@
+"""
+TRACE-ER Explorer — shared ingestion utilities.
+
+Every source connector in src/ingest/ should use these instead of
+re-implementing download, checksum, or column-detection logic.
+
+"""
+
+from __future__ import annotations
+
+import csv
+import hashlib
+import logging
+import zipfile
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable, Optional
+
+import requests
+
+logger = logging.getLogger("trace_er.ingest")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+@dataclass
+class DownloadResult:
+    url: str
+    dest_path: Path
+    bytes_downloaded: int
+    sha256: str
+    accessed_at: str  # ISO 8601 UTC timestamp, for the provenance manifest
+
+
+def sha256_checksum(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Compute a SHA-256 checksum for a file already on disk."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def download_file(
+    url: str,
+    dest_path: Path,
+    timeout: int = 120,
+    chunk_size: int = 1024 * 1024,
+) -> DownloadResult:
+    """
+    Stream a file to disk and compute its checksum as it comes down,
+    rather than trusting the source's Content-Length header alone.
+
+    Raises requests.HTTPError on a non-2xx response instead of writing
+    a partial or error-page file to disk silently.
+    """
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    bytes_downloaded = 0
+
+    accessed_at = datetime.now(timezone.utc).isoformat()
+
+    logger.info("Downloading %s -> %s", url, dest_path)
+    with requests.get(url, stream=True, timeout=timeout) as response:
+        response.raise_for_status()
+        with open(dest_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                digest.update(chunk)
+                bytes_downloaded += len(chunk)
+
+    checksum = digest.hexdigest()
+    logger.info(
+        "Downloaded %s bytes, sha256=%s, accessed_at=%s",
+        bytes_downloaded,
+        checksum,
+        accessed_at,
+    )
+    return DownloadResult(
+        url=url,
+        dest_path=dest_path,
+        bytes_downloaded=bytes_downloaded,
+        sha256=checksum,
+        accessed_at=accessed_at,
+    )
+
+
+def unzip_file(zip_path: Path, extract_dir: Path) -> list[Path]:
+    """Extract a zip archive and return the paths of every extracted file."""
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    extracted: list[Path] = []
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.namelist():
+            # Refuse anything that would escape extract_dir (zip-slip guard).
+            target = (extract_dir / member).resolve()
+            if not str(target).startswith(str(extract_dir.resolve())):
+                raise ValueError(f"Unsafe path in archive, refusing to extract: {member}")
+        zf.extractall(extract_dir)
+        extracted = [extract_dir / name for name in zf.namelist() if not name.endswith("/")]
+    logger.info("Extracted %s files from %s", len(extracted), zip_path)
+    return extracted
+
+
+def discover_csv_files(directory: Path) -> list[Path]:
+    """Find CSV files without assuming a specific filename in advance."""
+    found = sorted(directory.rglob("*.csv")) + sorted(directory.rglob("*.CSV"))
+    # de-duplicate while preserving order, in case of case-insensitive filesystems
+    seen = set()
+    unique = []
+    for p in found:
+        key = str(p).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+    return unique
+
+
+def detect_column(columns: Iterable[str], candidates: Iterable[str]) -> Optional[str]:
+    """
+    Match a real column name against a list of likely candidate names,
+    case- and whitespace-insensitively. Returns the ACTUAL column name
+    from `columns` (preserving its original casing) so callers can use
+    it directly, or None if nothing matched.
+    """
+    normalized = {c.strip().lower(): c for c in columns}
+    for candidate in candidates:
+        key = candidate.strip().lower()
+        if key in normalized:
+            return normalized[key]
+    return None
+
+
+def require_column(columns: Iterable[str], candidates: Iterable[str], label: str) -> str:
+    """Like detect_column, but raises a clear, actionable error if nothing matches."""
+    match = detect_column(columns, candidates)
+    if match is None:
+        raise ValueError(
+            f"Could not find a column for '{label}'. Tried candidates {list(candidates)}. "
+            f"Actual columns in file: {list(columns)}. "
+            f"Update the candidate list in this connector once you've confirmed the real "
+            f"column name — do not guess."
+        )
+    return match
+
+
+SOURCE_VOLUME_LOG_FIELDS = [
+    "source",
+    "run_timestamp_utc",
+    "downloaded_rows",
+    "accepted_rows",
+    "rejected_or_quarantined",
+    "duplicate_rows",
+    "linked_rows",
+    "final_unique_entities",
+    "notes",
+]
+
+
+def append_source_volume_log(log_path: Path, row: dict) -> None:
+    """
+    Append one run's counts to the source-volume log (see
+    docs/Source_Register.md). Creates the file with a header if it
+    doesn't exist yet. Never overwrites prior runs — this log is a
+    history, not a snapshot.
+    """
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    row = {**{k: row.get(k, "") for k in SOURCE_VOLUME_LOG_FIELDS}}
+    file_exists = log_path.exists()
+    with open(log_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=SOURCE_VOLUME_LOG_FIELDS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+    logger.info("Logged source-volume entry for %s to %s", row.get("source"), log_path)
