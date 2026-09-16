@@ -149,6 +149,93 @@ def require_column(columns: Iterable[str], candidates: Iterable[str], label: str
     return match
 
 
+def resolve_columns(
+    columns: Iterable[str],
+    candidates: dict[str, list[str]],
+    required_fields: Iterable[str],
+) -> dict:
+    """
+    Generic column-resolution logic shared by every connector. Required
+    fields raise immediately (via require_column) if no candidate
+    matches; optional fields log a warning and resolve to None.
+
+    """
+    required_fields = set(required_fields)
+    columns = list(columns)
+    resolved: dict[str, Optional[str]] = {}
+    for field_name, field_candidates in candidates.items():
+        if field_name in required_fields:
+            resolved[field_name] = require_column(columns, field_candidates, field_name)
+        else:
+            match = detect_column(columns, field_candidates)
+            if match is None:
+                logger.warning(
+                    "Optional column '%s' not found (tried %s). Continuing without it.",
+                    field_name,
+                    field_candidates,
+                )
+            resolved[field_name] = match
+    return resolved
+
+
+def filter_and_standardize_by_state(
+    df,
+    resolved: dict,
+    target_states: list[str],
+    state_field: str = "state",
+    lat_field: str = "latitude",
+    lon_field: str = "longitude",
+):
+    """
+    Generic state-filtering and column-renaming logic shared by every
+    connector whose standardized schema has a 'state' field and
+    (optionally) latitude/longitude fields. 
+
+    """
+    state_col = resolved[state_field]
+    state_norm = df[state_col].astype(str).str.strip().str.upper()
+    filtered = df[state_norm.isin(target_states)].copy()
+    accepted_rows = len(filtered)
+
+    lat_col = resolved.get(lat_field)
+    lon_col = resolved.get(lon_field)
+    if lat_col and lon_col:
+        missing_coords = int((filtered[lat_col].isna() | filtered[lon_col].isna()).sum())
+    else:
+        # Can't even evaluate coordinate presence — treat every row as
+        # unknown/missing, never as present, per the missing-data rule
+        # in the scope document.
+        missing_coords = accepted_rows
+
+    rename_map = {source_col: field_name for field_name, source_col in resolved.items() if source_col}
+    standardized = filtered.rename(columns=rename_map)
+
+    state_breakdown = state_norm[state_norm.isin(target_states)].value_counts().to_dict()
+
+    stats = {
+        "accepted_rows": accepted_rows,
+        "missing_coords": missing_coords,
+        "state_breakdown": state_breakdown,
+    }
+    return standardized, stats
+
+
+def discover_columns_by_keyword(
+    columns: Iterable[str], keyword_buckets: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """
+    For each bucket, find every column whose name contains any of the
+    bucket's keywords (case-insensitive substring match).
+
+    """
+    result: dict[str, list[str]] = {}
+    columns = list(columns)
+    for bucket, keywords in keyword_buckets.items():
+        matches = [col for col in columns if any(kw.upper() in col.upper() for kw in keywords)]
+        result[bucket] = matches
+    return result
+
+
 SOURCE_VOLUME_LOG_FIELDS = [
     "source",
     "run_timestamp_utc",

@@ -22,6 +22,7 @@ import pandas as pd
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import common  # noqa: E402
 from common import (  # noqa: E402
     append_source_volume_log,
     detect_column,
@@ -68,64 +69,23 @@ COLUMN_CANDIDATES = {
 
 def resolve_frs_columns(columns: list[str], candidates: dict[str, list[str]] | None = None) -> dict:
     """
-    Match real column names against the candidate lists. Required
-    fields raise immediately if unmatched; optional fields log a
-    warning and resolve to None. Pure function, no I/O, so it can be
-    unit tested against synthetic header lists.
+    Thin wrapper around common.resolve_columns, kept as a named
+    function here so existing tests and call sites don't need to
+    change. The actual matching logic lives in common.py and is
+    shared with every other connector.
     """
-    candidates = candidates or COLUMN_CANDIDATES
-    resolved: dict[str, str | None] = {}
-    for field_name, field_candidates in candidates.items():
-        if field_name in REQUIRED_FIELDS:
-            resolved[field_name] = require_column(columns, field_candidates, field_name)
-        else:
-            match = detect_column(columns, field_candidates)
-            if match is None:
-                logger.warning(
-                    "Optional column '%s' not found (tried %s). Continuing without it.",
-                    field_name,
-                    field_candidates,
-                )
-            resolved[field_name] = match
-    return resolved
+    return common.resolve_columns(columns, candidates or COLUMN_CANDIDATES, REQUIRED_FIELDS)
 
 
 def filter_and_standardize(
     df: pd.DataFrame, resolved: dict, target_states: list[str] | None = None
 ) -> tuple[pd.DataFrame, dict]:
     """
-    Filter to target states and rename columns to the standardized
-    facility_site field names from docs/Analytical_Data_Model.md. Pure
-    function (no I/O) so the filtering and stats logic is unit
-    testable independent of the actual download.
+    Thin wrapper around common.filter_and_standardize_by_state, kept
+    as a named function here so existing tests and call sites don't
+    need to change.
     """
-    target_states = target_states or TARGET_STATES
-    state_col = resolved["state"]
-
-    state_norm = df[state_col].astype(str).str.strip().str.upper()
-    filtered = df[state_norm.isin(target_states)].copy()
-    accepted_rows = len(filtered)
-
-    lat_col = resolved.get("latitude")
-    lon_col = resolved.get("longitude")
-    if lat_col and lon_col:
-        missing_coords = int((filtered[lat_col].isna() | filtered[lon_col].isna()).sum())
-    else:
-        # Can't even evaluate coordinate presence — treat all as unknown,
-        # never as "present," per the missing-data rule in the scope doc.
-        missing_coords = accepted_rows
-
-    rename_map = {source_col: field_name for field_name, source_col in resolved.items() if source_col}
-    standardized = filtered.rename(columns=rename_map)
-
-    state_breakdown = state_norm[state_norm.isin(target_states)].value_counts().to_dict()
-
-    stats = {
-        "accepted_rows": accepted_rows,
-        "missing_coords": missing_coords,
-        "state_breakdown": state_breakdown,
-    }
-    return standardized, stats
+    return common.filter_and_standardize_by_state(df, resolved, target_states or TARGET_STATES)
 
 
 def load_frs_config() -> dict:
