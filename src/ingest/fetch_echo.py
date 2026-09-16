@@ -58,11 +58,52 @@ CORE_COLUMN_CANDIDATES = {
     "county": ["FAC_COUNTY", "COUNTY_NAME"],
 }
 
-# Keyword buckets for discovering the ~120+ compliance-summary fields
-# whose exact names are not confirmed. This does NOT rename or
-# standardize these columns — it only reports which real columns
-# contain each keyword, so a human can confirm the mapping before any
-# feature gets built on top of it.
+COORD_QUALITY_CANDIDATES = {
+    "coord_collect_method": ["FAC_COLLECTION_METHOD"],
+    "coord_reference_point": ["FAC_REFERENCE_POINT"],
+    "coord_accuracy_value": ["FAC_ACCURACY_METERS"],
+}
+
+CONFIRMED_COMPLIANCE_SUMMARY_CANDIDATES = {
+    "fac_inspection_count": ["FAC_INSPECTION_COUNT"],
+    "fac_date_last_inspection": ["FAC_DATE_LAST_INSPECTION"],
+    "fac_informal_count": ["FAC_INFORMAL_COUNT"],
+    "fac_date_last_informal_action": ["FAC_DATE_LAST_INFORMAL_ACTION"],
+    "fac_formal_action_count": ["FAC_FORMAL_ACTION_COUNT"],
+    "fac_date_last_formal_action": ["FAC_DATE_LAST_FORMAL_ACTION"],
+    "fac_total_penalties": ["FAC_TOTAL_PENALTIES"],
+    "fac_penalty_count": ["FAC_PENALTY_COUNT"],
+    "fac_date_last_penalty": ["FAC_DATE_LAST_PENALTY"],
+    "fac_last_penalty_amt": ["FAC_LAST_PENALTY_AMT"],
+    "fac_qtrs_with_nc": ["FAC_QTRS_WITH_NC"],
+    "fac_programs_with_snc": ["FAC_PROGRAMS_WITH_SNC"],
+    "fac_compliance_status": ["FAC_COMPLIANCE_STATUS"],
+    # Note the inconsistent EPA abbreviation: FLG here, not FLAG, unlike
+    # most other flag fields in this file. Confirmed from the real header,
+    # not a guess — do not "fix" this to FAC_SNC_FLAG, it would break.
+    "fac_snc_flag": ["FAC_SNC_FLG"],
+    "fac_3yr_compliance_history": ["FAC_3YR_COMPLIANCE_HISTORY"],
+    "fac_active_flag": ["FAC_ACTIVE_FLAG"],
+    "fac_major_flag": ["FAC_MAJOR_FLAG"],
+    "air_flag": ["AIR_FLAG"],
+    "npdes_flag": ["NPDES_FLAG"],
+    "sdwis_flag": ["SDWIS_FLAG"],
+    "rcra_flag": ["RCRA_FLAG"],
+    "tri_flag": ["TRI_FLAG"],
+    "ghg_flag": ["GHG_FLAG"],
+    "naics_codes_raw": ["FAC_NAICS_CODES"],
+    "sic_codes_raw": ["FAC_SIC_CODES"],
+    "detail_report_url": ["DFR_URL"],
+    # CAA's severe-violation indicator
+    "caa_hpv_flag": ["CAA_HPV_FLAG"],
+}
+
+ALL_COLUMN_CANDIDATES = {
+    **CORE_COLUMN_CANDIDATES,
+    **COORD_QUALITY_CANDIDATES,
+    **CONFIRMED_COMPLIANCE_SUMMARY_CANDIDATES,
+}
+
 KEYWORD_BUCKETS = {
     "program_flags": ["FLAG"],
     "inspections": ["INSPECTION"],
@@ -74,8 +115,8 @@ KEYWORD_BUCKETS = {
 
 
 def resolve_echo_core_columns(columns: list[str]) -> dict:
-    """Thin wrapper around common.resolve_columns for ECHO's core fields."""
-    return common.resolve_columns(columns, CORE_COLUMN_CANDIDATES, REQUIRED_FIELDS)
+    """Thin wrapper around common.resolve_columns for ECHO's confirmed fields."""
+    return common.resolve_columns(columns, ALL_COLUMN_CANDIDATES, REQUIRED_FIELDS)
 
 
 def filter_and_standardize(df: pd.DataFrame, resolved: dict, target_states: list[str] | None = None):
@@ -167,10 +208,11 @@ def main() -> None:
     logger.info("Loaded %d rows, %d columns", downloaded_rows, len(all_columns))
 
     resolved = resolve_echo_core_columns(all_columns)
-    logger.info("Resolved core columns: %s", resolved)
+    logger.info("Resolved columns (confirmed set): %s", resolved)
     logger.info(
-        "STOP AND CHECK before trusting downstream output: confirm each core match "
-        "above against the real header row."
+        "These field names were confirmed against a real ECHO Exporter header on "
+        "2026-09-16. If this run's header differs (EPA changed the export format), "
+        "check the warnings above for any field that failed to match."
     )
 
     discovery = discover_columns_by_keyword(all_columns, KEYWORD_BUCKETS)

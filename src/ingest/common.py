@@ -236,6 +236,25 @@ def discover_columns_by_keyword(
     return result
 
 
+def haversine_distance_km(
+    lat1: float, lon1: float, lat2: float, lon2: float
+) -> float:
+    """
+    Great-circle distance between two lat/lon points, in kilometers.
+    Used here to cross-check whether two sources' coordinates for the
+    same entity roughly agree
+    """
+    from math import radians, sin, cos, sqrt, atan2
+
+    R = 6371.0088  # mean Earth radius, km
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
+
 SOURCE_VOLUME_LOG_FIELDS = [
     "source",
     "run_timestamp_utc",
