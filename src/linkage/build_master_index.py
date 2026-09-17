@@ -223,13 +223,17 @@ def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     coord_cols = df.apply(choose_best_coordinate, axis=1)
     df = pd.concat([df, coord_cols], axis=1)
 
-    # Presence is determined by checking a required, always-populated
-    # field per source (facility_name is required by every connector)
-    # rather than combining the two separate _merge/_merge_tri
-    # indicator columns' combinatorics.
-    frs_present = df["facility_name_frs"].notna() if "facility_name_frs" in df.columns else pd.Series(False, index=df.index)
-    echo_present = df["facility_name_echo"].notna() if "facility_name_echo" in df.columns else pd.Series(False, index=df.index)
-    tri_present = df["facility_name_tri"].notna() if "facility_name_tri" in df.columns else pd.Series(False, index=df.index)
+    if "_merge" in df.columns:
+        frs_present = df["_merge"].isin(["both", "left_only"])
+        echo_present = df["_merge"].isin(["both", "right_only"])
+    else:
+        frs_present = pd.Series(False, index=df.index)
+        echo_present = pd.Series(False, index=df.index)
+
+    if "_merge_tri" in df.columns:
+        tri_present = df["_merge_tri"].isin(["both", "right_only"])
+    else:
+        tri_present = pd.Series(False, index=df.index)
 
     def sources_label(row_idx):
         parts = []
