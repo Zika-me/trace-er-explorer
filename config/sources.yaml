@@ -42,13 +42,6 @@ sources:
     required: true
     access_date: null
 
-  epa_tri:
-    label: "EPA TRI Basic Data Files"
-    url: "https://www.epa.gov/toxics-release-inventory-tri-program/tri-basic-data-files-calendar-years-1987-present"
-    role: "release_history"
-    required: true
-    access_date: null
-
   phmsa_pipeline:
     label: "PHMSA Pipeline Incident/Accident Data"
     url: "https://www.phmsa.dot.gov/data-and-statistics/pipeline/distribution-transmission-gathering-lng-and-liquid-accident-and-incident-data"
@@ -102,6 +95,39 @@ sources:
     state: "NM"
     required: true
     access_date: null
+
+  epa_tri:
+    label: "EPA TRI (Toxics Release Inventory) - facility data via Envirofacts efservice"
+    url: "https://www.epa.gov/toxics-release-inventory-tri-program/tri-basic-data-files-calendar-years-1987-present"
+    role: "release_history"
+    required: true
+    access_date: null
+    # IMPORTANT: the TRI Basic Data Files web download page's "Download
+    # data file" button is JavaScript-driven (resolves to a
+    # javascript:void(0) placeholder) there is no static URL for it.
+    # Verified 2026-09-17 via live search results (multiple independent
+    # real fetches, including one returning an actual labeled CSV
+    # header) that EPA's Envirofacts efservice REST API is a working,
+    # documented alternative for the tri_facility table specifically.
+    efservice_base_url: "https://data.epa.gov/efservice"
+    efservice_table_facility: "tri_facility"
+    efservice_verified: "2026-09-17"
+    efservice_notes: >
+      Facility-level data only (tri_facility table) is confirmed with a
+      real column header. Release-quantity data (likely tri_release_qty
+      or tri_reporting_form) has confirmed table NAMES but NOT a
+      confirmed column header yet — do not build a connector for release
+      quantities from memory of these names; fetch a real sample first,
+      the same way tri_facility's header was confirmed.
+    documented_gotchas: >
+      (1) An efservice filter naming a column the table doesn't have is
+      SILENTLY IGNORED and the full unfiltered/national table is
+      returned instead of an error — always cross-check a filtered
+      count against the unfiltered count before trusting a pull, see
+      common.verify_filtered_count(). (2) Chained multi-table joins in
+      a single efservice URL have been reported to silently drop rows
+      — prefer querying tables separately and joining in pandas over
+      relying on a chained URL for the actual data pull.
 
   maine_dep:
     label: "Maine DEP Maps and Data"
