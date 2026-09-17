@@ -255,6 +255,58 @@ def haversine_distance_km(
     return R * c
 
 
+def verify_filtered_count(filtered_count: int, unfiltered_count: int, filter_description: str) -> None:
+    """
+    Defends against the EPA efservice API ignoring filter parameters for 
+    unrecognized columns, returning the full unfiltered table instead 
+    of an error.
+    """
+    if filtered_count <= 0:
+        raise ValueError(
+            f"Filtered count for {filter_description} is {filtered_count}. Expected a "
+            f"positive number of records. Either the filter column name is wrong, or "
+            f"there genuinely are zero matching records — check manually before proceeding, "
+            f"do not assume either explanation."
+        )
+    if filtered_count >= unfiltered_count:
+        raise ValueError(
+            f"Filtered count ({filtered_count}) for {filter_description} is not smaller "
+            f"than the unfiltered count ({unfiltered_count}). This is the exact signature "
+            f"of EPA's efservice API silently ignoring an unrecognized filter column and "
+            f"returning the full unfiltered table instead of erroring. Do not trust this "
+            f"data — verify the filter column name against the live API before retrying."
+        )
+
+
+def get_efservice_count(url: str, timeout: int = 60) -> int:
+    """
+    Fetch a count from an EPA efservice .../COUNT/JSON endpoint.
+    """
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+    data = response.json()
+
+    # Shape 1: a list containing one dict with TOTALQUERYRESULTS
+    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+        for key in ("TOTALQUERYRESULTS", "totalqueryresults", "TotalQueryResults"):
+            if key in data[0]:
+                return int(data[0][key])
+    # Shape 2: a bare dict with the same key
+    if isinstance(data, dict):
+        for key in ("TOTALQUERYRESULTS", "totalqueryresults", "TotalQueryResults"):
+            if key in data:
+                return int(data[key])
+    # Shape 3: a bare number or numeric string
+    if isinstance(data, (int, float)):
+        return int(data)
+
+    raise ValueError(
+        f"Could not parse a count from {url}. Response was: {data!r}. "
+        f"The efservice COUNT/JSON response shape may differ from what was expected — "
+        f"inspect it manually and update get_efservice_count() rather than guessing."
+    )
+
+
 SOURCE_VOLUME_LOG_FIELDS = [
     "source",
     "run_timestamp_utc",
@@ -270,10 +322,8 @@ SOURCE_VOLUME_LOG_FIELDS = [
 
 def append_source_volume_log(log_path: Path, row: dict) -> None:
     """
-    Append one run's counts to the source-volume log (see
-    docs/Source_Register.md). Creates the file with a header if it
-    doesn't exist yet. Never overwrites prior runs — this log is a
-    history, not a snapshot.
+    Append one run's counts to the source-volume log. Creates the file with a header if it
+    doesn't exist yet.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     row = {**{k: row.get(k, "") for k in SOURCE_VOLUME_LOG_FIELDS}}
