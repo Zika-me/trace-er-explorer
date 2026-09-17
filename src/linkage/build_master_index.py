@@ -207,11 +207,15 @@ def choose_best_coordinate(row: pd.Series) -> pd.Series:
         })
 
 
-def build_master_index(merged: pd.DataFrame) -> pd.DataFrame:
+def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """
     Build the final standardized master index from the merged frame.
     """
     df = merged.copy()
+
+    no_id_mask = df["registry_id"].isna()
+    dropped_no_id_count = int(no_id_mask.sum())
+    df = df[~no_id_mask].copy()
 
     coord_cols = df.apply(choose_best_coordinate, axis=1)
     df = pd.concat([df, coord_cols], axis=1)
@@ -243,10 +247,13 @@ def build_master_index(merged: pd.DataFrame) -> pd.DataFrame:
         "detail_report_url",
     ]
     existing_cols = [c for c in keep_cols if c in df.columns]
-    return df[existing_cols].rename(columns={"registry_id": "master_id"})
+    index_df = df[existing_cols].rename(columns={"registry_id": "master_id"})
+    return index_df, dropped_no_id_count
 
 
-def write_build_report(match_stats: dict, state_check: dict, coord_check: dict, out_path: Path) -> None:
+def write_build_report(
+    match_stats: dict, state_check: dict, coord_check: dict, dropped_no_id_count: int, out_path: Path
+) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# Master Facility Index Build Report (FRS + ECHO)",
@@ -259,6 +266,16 @@ def write_build_report(match_stats: dict, state_check: dict, coord_check: dict, 
         f"- Matched in both FRS and ECHO (EXACT_ID, full data): {match_stats['both']}",
         f"- FRS only (no ECHO compliance data): {match_stats['frs_only']}",
         f"- ECHO only (no FRS identity record — unusual, worth investigating if non-trivial): {match_stats['echo_only']}",
+        "",
+        f"- Rows with NO registry_id at all, excluded from the final index (fixed 2026-09-16, "
+        f"see check_duplicate_ids.py): {dropped_no_id_count}",
+    ]
+    if dropped_no_id_count > 0:
+        lines.append(
+            "  These rows have no usable identifier and cannot be indexed by one — "
+            "excluded rather than mislabeled EXACT_ID or dropped without a count."
+        )
+    lines += [
         "",
         "## State agreement check (matched rows only)",
         "",
@@ -299,14 +316,19 @@ def main() -> None:
     coord_check = check_coordinate_agreement(merged)
     logger.info("Coordinate agreement: %s", coord_check)
 
-    master_index = build_master_index(merged)
+    master_index, dropped_no_id_count = build_master_index(merged)
+    if dropped_no_id_count:
+        logger.warning(
+            "%d rows had no registry_id at all and were excluded from the master index.",
+            dropped_no_id_count,
+        )
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     out_path = PROCESSED_DIR / "master_facility_index.csv"
     master_index.to_csv(out_path, index=False)
     logger.info("Wrote %d rows to %s", len(master_index), out_path)
 
-    write_build_report(match_stats, state_check, coord_check, VALIDATION_DIR / "master_index_build_report.md")
+    write_build_report(match_stats, state_check, coord_check, dropped_no_id_count, VALIDATION_DIR / "master_index_build_report.md")
 
 
 if __name__ == "__main__":

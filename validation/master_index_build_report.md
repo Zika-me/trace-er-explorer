@@ -9,6 +9,9 @@ Generated automatically by `build_master_index.py`.
 - FRS only (no ECHO compliance data): 216643
 - ECHO only (no FRS identity record — unusual, worth investigating if non-trivial): 1368
 
+- Rows with NO registry_id at all, excluded from the final index (fixed 2026-09-16, see check_duplicate_ids.py): 441
+  These rows have no usable identifier and cannot be indexed by one — excluded rather than mislabeled EXACT_ID or dropped without a count.
+
 ## State agreement check (matched rows only)
 
 - Checked: 310349
