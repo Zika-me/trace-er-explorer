@@ -1,10 +1,9 @@
 """
-TRACE-ER Explorer — Step 3: Master Facility Index (FRS + ECHO).
+TRACE-ER Explorer — Step 3: Master Facility Index (FRS + ECHO + TRI).
 
-Joins the standardized FRS and ECHO interim tables on registry_id (the
-one identifier both sources natively share) and produces an
-analysis-ready master facility index, plus a QA report.
-
+Joins the standardized FRS, ECHO, and TRI interim tables on their
+shared national registry ID and produces an analysis-ready master
+facility index, plus a QA report.
 
 Usage:
     python src/linkage/build_master_index.py
@@ -24,6 +23,7 @@ from common import haversine_distance_km, logger  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRS_INTERIM = REPO_ROOT / "data" / "interim" / "frs_facility_site.csv"
 ECHO_INTERIM = REPO_ROOT / "data" / "interim" / "echo_facility_summary.csv"
+TRI_INTERIM = REPO_ROOT / "data" / "interim" / "tri_facility.csv"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 VALIDATION_DIR = REPO_ROOT / "validation"
 
@@ -32,24 +32,24 @@ VALIDATION_DIR = REPO_ROOT / "validation"
 AGREEMENT_BANDS_KM = [1, 5, 10, 50]
 
 
-def load_interim_tables() -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_interim_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     dtype=str is not optional here. Re-reading a written CSV without
     forcing string dtype risks pandas silently inferring registry_id
     as float64 (e.g. "110072186793" -> 110072186793.0 -> back to
     "110072186793.0" on comparison)
     """
-    if not FRS_INTERIM.exists():
-        raise FileNotFoundError(
-            f"{FRS_INTERIM} not found. Run src/ingest/fetch_frs.py first."
-        )
-    if not ECHO_INTERIM.exists():
-        raise FileNotFoundError(
-            f"{ECHO_INTERIM} not found. Run src/ingest/fetch_echo.py first."
-        )
+    for path, connector in [
+        (FRS_INTERIM, "src/ingest/fetch_frs.py"),
+        (ECHO_INTERIM, "src/ingest/fetch_echo.py"),
+        (TRI_INTERIM, "src/ingest/fetch_tri.py"),
+    ]:
+        if not path.exists():
+            raise FileNotFoundError(f"{path} not found. Run {connector} first.")
     frs = pd.read_csv(FRS_INTERIM, dtype=str, low_memory=False)
     echo = pd.read_csv(ECHO_INTERIM, dtype=str, low_memory=False)
-    return frs, echo
+    tri = pd.read_csv(TRI_INTERIM, dtype=str, low_memory=False)
+    return frs, echo, tri
 
 
 def merge_frs_echo(frs: pd.DataFrame, echo: pd.DataFrame) -> pd.DataFrame:
@@ -65,6 +65,25 @@ def merge_frs_echo(frs: pd.DataFrame, echo: pd.DataFrame) -> pd.DataFrame:
         how="outer",
         suffixes=("_frs", "_echo"),
         indicator=True,
+    )
+    return merged
+
+
+def merge_third_source(
+    merged_two: pd.DataFrame, third_df: pd.DataFrame, third_join_col: str, suffix: str
+) -> pd.DataFrame:
+    """
+    Extend an already-merged two-source frame with a third source.
+    """
+    third = third_df.rename(columns={third_join_col: "registry_id"})
+    rename_map = {c: f"{c}_{suffix}" for c in third.columns if c != "registry_id"}
+    third = third.rename(columns=rename_map)
+    merged = pd.merge(
+        merged_two,
+        third,
+        on="registry_id",
+        how="outer",
+        indicator=f"_merge_{suffix}",
     )
     return merged
 
@@ -154,57 +173,41 @@ def check_coordinate_agreement(merged: pd.DataFrame) -> dict:
 
 def choose_best_coordinate(row: pd.Series) -> pd.Series:
     """
-    When both sources have a coordinate for the same entity, prefer
-    whichever has the lower (better) coord_accuracy_value. When only
-    one side has a usable coordinate, use that one. When neither
-    side has a numeric accuracy value but both have coordinates,
-    default to FRS (the identity anchor) rather than guessing.
+    Among every source that has a usable coordinate for this entity,
+    prefer whichever has the lowest (best) coord_accuracy_value. When
+    only one source has a usable coordinate, use that one. When
+    multiple sources have coordinates but none has a parseable
+    accuracy value, default to the first candidate in priority order
+    (FRS > ECHO > TRI).
     """
-    lat_frs, lon_frs = row.get("latitude_frs"), row.get("longitude_frs")
-    lat_echo, lon_echo = row.get("latitude_echo"), row.get("longitude_echo")
-    acc_frs = row.get("coord_accuracy_value_frs")
-    acc_echo = row.get("coord_accuracy_value_echo")
+    candidates = [
+        ("frs", row.get("latitude_frs"), row.get("longitude_frs"), row.get("coord_accuracy_value_frs")),
+        ("echo", row.get("latitude_echo"), row.get("longitude_echo"), row.get("coord_accuracy_value_echo")),
+        ("tri", row.get("pref_latitude_tri"), row.get("pref_longitude_tri"), row.get("coord_accuracy_value_tri")),
+    ]
 
-    has_frs = pd.notna(lat_frs) and pd.notna(lon_frs)
-    has_echo = pd.notna(lat_echo) and pd.notna(lon_echo)
+    usable = [(src, lat, lon, acc) for src, lat, lon, acc in candidates if pd.notna(lat) and pd.notna(lon)]
+    if not usable:
+        return pd.Series({"latitude": None, "longitude": None, "coord_accuracy_value": None, "coord_source": None})
 
-    if has_frs and not has_echo:
-        source = "frs"
-    elif has_echo and not has_frs:
-        source = "echo"
-    elif has_frs and has_echo:
+    def parsed_accuracy(acc):
         try:
-            acc_frs_f = float(acc_frs) if pd.notna(acc_frs) else None
-            acc_echo_f = float(acc_echo) if pd.notna(acc_echo) else None
+            return float(acc) if pd.notna(acc) else None
         except (ValueError, TypeError):
-            acc_frs_f = acc_echo_f = None
+            return None
 
-        if acc_frs_f is not None and acc_echo_f is not None:
-            source = "frs" if acc_frs_f <= acc_echo_f else "echo"
-        elif acc_frs_f is not None:
-            source = "frs"
-        elif acc_echo_f is not None:
-            source = "echo"
-        else:
-            source = "frs"  # neither has an accuracy value — default to the identity anchor
-    else:
-        source = None
+    # Sort by (has-no-parseable-accuracy last, accuracy value ascending),
+    # with original candidate order as a stable tie-break
+    def sort_key(item):
+        _, _, _, acc = item
+        parsed = parsed_accuracy(acc)
+        return (parsed is None, parsed if parsed is not None else 0.0)
 
-    if source == "frs":
-        return pd.Series({
-            "latitude": lat_frs, "longitude": lon_frs,
-            "coord_accuracy_value": acc_frs, "coord_source": "frs",
-        })
-    elif source == "echo":
-        return pd.Series({
-            "latitude": lat_echo, "longitude": lon_echo,
-            "coord_accuracy_value": acc_echo, "coord_source": "echo",
-        })
-    else:
-        return pd.Series({
-            "latitude": None, "longitude": None,
-            "coord_accuracy_value": None, "coord_source": None,
-        })
+    best_source, best_lat, best_lon, best_acc = sorted(usable, key=sort_key)[0]
+    return pd.Series({
+        "latitude": best_lat, "longitude": best_lon,
+        "coord_accuracy_value": best_acc, "coord_source": best_source,
+    })
 
 
 def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -220,21 +223,43 @@ def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     coord_cols = df.apply(choose_best_coordinate, axis=1)
     df = pd.concat([df, coord_cols], axis=1)
 
-    df["sources_present"] = df["_merge"].map({
-        "both": "FRS,ECHO", "left_only": "FRS", "right_only": "ECHO",
-    })
-    df["source_count"] = df["_merge"].map({"both": 2, "left_only": 1, "right_only": 1})
+    # Presence is determined by checking a required, always-populated
+    # field per source (facility_name is required by every connector)
+    # rather than combining the two separate _merge/_merge_tri
+    # indicator columns' combinatorics.
+    frs_present = df["facility_name_frs"].notna() if "facility_name_frs" in df.columns else pd.Series(False, index=df.index)
+    echo_present = df["facility_name_echo"].notna() if "facility_name_echo" in df.columns else pd.Series(False, index=df.index)
+    tri_present = df["facility_name_tri"].notna() if "facility_name_tri" in df.columns else pd.Series(False, index=df.index)
 
-    # Every entity here shares EPA's national REGISTRY_ID
+    def sources_label(row_idx):
+        parts = []
+        if frs_present.loc[row_idx]:
+            parts.append("FRS")
+        if echo_present.loc[row_idx]:
+            parts.append("ECHO")
+        if tri_present.loc[row_idx]:
+            parts.append("TRI")
+        return ",".join(parts)
+
+    df["sources_present"] = df.index.map(sources_label)
+    df["source_count"] = frs_present.astype(int) + echo_present.astype(int) + tri_present.astype(int)
+
     df["linkage_confidence"] = "EXACT_ID"
 
-    # Prefer FRS for identity fields
-    def coalesce(a, b):
-        return df[a].where(df[a].notna(), df[b]) if a in df.columns and b in df.columns else df.get(a, df.get(b))
+    # Prefer FRS for identity fields (the richer identity source),
+    # then ECHO, then TRI, falling back only when the preferred
+    # source is absent for that row.
+    def coalesce(*cols):
+        result = None
+        for col in cols:
+            if col not in df.columns:
+                continue
+            result = df[col] if result is None else result.where(result.notna(), df[col])
+        return result
 
-    df["facility_name"] = coalesce("facility_name_frs", "facility_name_echo")
-    df["state"] = coalesce("state_frs", "state_echo")
-    df["county"] = coalesce("county_frs", "county_echo")
+    df["facility_name"] = coalesce("facility_name_frs", "facility_name_echo", "facility_name_tri")
+    df["state"] = coalesce("state_frs", "state_echo", "state_abbr_tri")
+    df["county"] = coalesce("county_frs", "county_echo", "county_tri")
 
     keep_cols = [
         "registry_id", "facility_name", "address", "city", "postal_code", "state", "county",
@@ -245,6 +270,7 @@ def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
         "fac_total_penalties", "fac_qtrs_with_nc", "fac_compliance_status", "fac_snc_flag",
         "caa_hpv_flag", "air_flag", "npdes_flag", "sdwis_flag", "rcra_flag", "tri_flag", "ghg_flag",
         "detail_report_url",
+        "tri_facility_id_tri", "region_tri", "parent_co_name_tri", "fac_closed_ind_tri",
     ]
     existing_cols = [c for c in keep_cols if c in df.columns]
     index_df = df[existing_cols].rename(columns={"registry_id": "master_id"})
@@ -252,17 +278,22 @@ def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
 
 
 def write_build_report(
-    match_stats: dict, state_check: dict, coord_check: dict, dropped_no_id_count: int, out_path: Path
+    match_stats: dict,
+    state_check: dict,
+    coord_check: dict,
+    dropped_no_id_count: int,
+    three_way_breakdown: dict,
+    out_path: Path,
 ) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# Master Facility Index Build Report (FRS + ECHO)",
+        "# Master Facility Index Build Report (FRS + ECHO + TRI)",
         "",
         "Generated automatically by `build_master_index.py`.",
         "",
-        "## Match statistics",
+        "## FRS/ECHO match statistics (from the two-way join, before TRI is added)",
         "",
-        f"- Total rows in outer join: {match_stats['total']}",
+        f"- Total rows in FRS+ECHO outer join: {match_stats['total']}",
         f"- Matched in both FRS and ECHO (EXACT_ID, full data): {match_stats['both']}",
         f"- FRS only (no ECHO compliance data): {match_stats['frs_only']}",
         f"- ECHO only (no FRS identity record — unusual, worth investigating if non-trivial): {match_stats['echo_only']}",
@@ -277,7 +308,21 @@ def write_build_report(
         )
     lines += [
         "",
-        "## State agreement check (matched rows only)",
+        "## Final three-way source breakdown (FRS + ECHO + TRI, after TRI is added)",
+        "",
+    ]
+    for combo, count in sorted(three_way_breakdown.items()):
+        lines.append(f"- {combo or '(none — should not happen)'}: {count}")
+    lines += [
+        "",
+        "**Scope note:** the state-agreement and coordinate-agreement checks below compare "
+        "FRS against ECHO only — they were NOT extended to cross-check TRI in this build. "
+        "TRI's identity and coordinate data are folded into the index (see coord_source, "
+        "which can be 'tri'), but TRI has not been independently QA'd against the other two "
+        "sources the way FRS and ECHO were QA'd against each other. This is a stated scope "
+        "limitation, not an oversight to be assumed away.",
+        "",
+        "## State agreement check (FRS vs ECHO, matched rows only)",
         "",
         f"- Checked: {state_check.get('checked', 0)}",
         f"- Agree: {state_check.get('agree', 0)}",
@@ -290,7 +335,7 @@ def write_build_report(
             lines.append(f"- {rec}")
 
     lines.append("")
-    lines.append("## Coordinate agreement check (matched rows with coordinates from both sources)")
+    lines.append("## Coordinate agreement check (FRS vs ECHO, matched rows with coordinates from both)")
     lines.append("")
     if coord_check.get("checked", 0) > 0:
         for k, v in coord_check.items():
@@ -303,32 +348,43 @@ def write_build_report(
 
 
 def main() -> None:
-    frs, echo = load_interim_tables()
-    logger.info("Loaded FRS interim: %d rows. ECHO interim: %d rows.", len(frs), len(echo))
+    frs, echo, tri = load_interim_tables()
+    logger.info(
+        "Loaded FRS interim: %d rows. ECHO interim: %d rows. TRI interim: %d rows.",
+        len(frs), len(echo), len(tri),
+    )
 
-    merged = merge_frs_echo(frs, echo)
-    match_stats = compute_match_stats(merged)
-    logger.info("Match stats: %s", match_stats)
+    two_way = merge_frs_echo(frs, echo)
+    match_stats = compute_match_stats(two_way)
+    logger.info("FRS/ECHO match stats: %s", match_stats)
 
-    state_check = check_state_agreement(merged)
-    logger.info("State agreement: %s", state_check)
+    state_check = check_state_agreement(two_way)
+    logger.info("State agreement (FRS vs ECHO): %s", state_check)
 
-    coord_check = check_coordinate_agreement(merged)
-    logger.info("Coordinate agreement: %s", coord_check)
+    coord_check = check_coordinate_agreement(two_way)
+    logger.info("Coordinate agreement (FRS vs ECHO): %s", coord_check)
 
-    master_index, dropped_no_id_count = build_master_index(merged)
+    three_way = merge_third_source(two_way, tri, third_join_col="epa_registry_id", suffix="tri")
+
+    master_index, dropped_no_id_count = build_master_index(three_way)
     if dropped_no_id_count:
         logger.warning(
             "%d rows had no registry_id at all and were excluded from the master index.",
             dropped_no_id_count,
         )
 
+    three_way_breakdown = master_index["sources_present"].value_counts().to_dict()
+    logger.info("Final three-way source breakdown: %s", three_way_breakdown)
+
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     out_path = PROCESSED_DIR / "master_facility_index.csv"
     master_index.to_csv(out_path, index=False)
     logger.info("Wrote %d rows to %s", len(master_index), out_path)
 
-    write_build_report(match_stats, state_check, coord_check, dropped_no_id_count, VALIDATION_DIR / "master_index_build_report.md")
+    write_build_report(
+        match_stats, state_check, coord_check, dropped_no_id_count,
+        three_way_breakdown, VALIDATION_DIR / "master_index_build_report.md",
+    )
 
 
 if __name__ == "__main__":
