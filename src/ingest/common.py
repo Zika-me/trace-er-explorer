@@ -257,9 +257,9 @@ def haversine_distance_km(
 
 def verify_filtered_count(filtered_count: int, unfiltered_count: int, filter_description: str) -> None:
     """
-    Defends against the EPA efservice API ignoring filter parameters for 
-    unrecognized columns, returning the full unfiltered table instead 
-    of an error.
+    Defends against a real, documented failure mode of EPA's Envirofacts
+    efservice API (confirmed via third-party tooling that measured it
+    directly).
     """
     if filtered_count <= 0:
         raise ValueError(
@@ -305,6 +305,23 @@ def get_efservice_count(url: str, timeout: int = 60) -> int:
         f"The efservice COUNT/JSON response shape may differ from what was expected — "
         f"inspect it manually and update get_efservice_count() rather than guessing."
     )
+
+
+def check_interim_freshness(df_columns: list[str], expected_fields: list[str], connector_name: str) -> list[str]:
+    """
+    Check whether an interim file has every field its connector is
+    currently supposed to produce.
+    """
+    missing = [f for f in expected_fields if f not in df_columns]
+    if missing:
+        logger.warning(
+            "%s interim file appears STALE — missing %d field(s) the connector "
+            "currently produces: %s. This usually means the file predates a "
+            "later expansion of the connector's column list. Re-run the "
+            "connector to regenerate it before trusting downstream results.",
+            connector_name, len(missing), missing,
+        )
+    return missing
 
 
 SOURCE_VOLUME_LOG_FIELDS = [

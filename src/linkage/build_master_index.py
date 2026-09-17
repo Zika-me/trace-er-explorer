@@ -19,6 +19,9 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ingest"))
 import common  # noqa: E402
 from common import haversine_distance_km, logger  # noqa: E402
+import fetch_frs  # noqa: E402
+import fetch_echo  # noqa: E402
+import fetch_tri  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRS_INTERIM = REPO_ROOT / "data" / "interim" / "frs_facility_site.csv"
@@ -49,6 +52,12 @@ def load_interim_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     frs = pd.read_csv(FRS_INTERIM, dtype=str, low_memory=False)
     echo = pd.read_csv(ECHO_INTERIM, dtype=str, low_memory=False)
     tri = pd.read_csv(TRI_INTERIM, dtype=str, low_memory=False)
+
+    # Freshness check
+    common.check_interim_freshness(list(frs.columns), list(fetch_frs.COLUMN_CANDIDATES.keys()), "FRS")
+    common.check_interim_freshness(list(echo.columns), list(fetch_echo.ALL_COLUMN_CANDIDATES.keys()), "ECHO")
+    common.check_interim_freshness(list(tri.columns), list(fetch_tri.COLUMN_CANDIDATES.keys()), "TRI")
+
     return frs, echo, tri
 
 
