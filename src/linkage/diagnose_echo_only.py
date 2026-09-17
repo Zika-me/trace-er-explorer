@@ -43,9 +43,11 @@ def check_against_national_frs(echo_only_ids: list[str], national_frs: pd.DataFr
     national_frs = national_frs.copy()
     national_frs["REGISTRY_ID"] = national_frs["REGISTRY_ID"].astype(str)
 
-    found = national_frs[national_frs["REGISTRY_ID"].isin(echo_only_ids)]
+    unique_echo_only_ids = set(echo_only_ids)
+
+    found = national_frs[national_frs["REGISTRY_ID"].isin(unique_echo_only_ids)]
     found_ids = set(found["REGISTRY_ID"])
-    not_found_ids = set(echo_only_ids) - found_ids
+    not_found_ids = unique_echo_only_ids - found_ids
 
     state_norm = found["STATE_CODE"].astype(str).str.strip().str.upper()
     found_under_target_state = found[state_norm.isin(TARGET_STATES)]
@@ -56,7 +58,9 @@ def check_against_national_frs(echo_only_ids: list[str], national_frs: pd.DataFr
     )
 
     return {
-        "total_echo_only": len(echo_only_ids),
+        "total_echo_only_rows": len(echo_only_ids),
+        "total_echo_only_unique_ids": len(unique_echo_only_ids),
+        "duplicate_row_gap": len(echo_only_ids) - len(unique_echo_only_ids),
         "found_in_national_frs": len(found_ids),
         "not_found_in_national_frs": len(not_found_ids),
         "found_under_target_state": len(found_under_target_state),
@@ -77,8 +81,19 @@ def write_report(result: dict, out_path: Path) -> None:
         "than ECHO reports — which would explain the exclusion as a filtering",
         "artifact rather than a genuine data gap.",
         "",
-        f"- Total ECHO-only entities: {result['total_echo_only']}",
-        f"- Found in FRS's full national extract: {result['found_in_national_frs']}",
+        f"- Total ECHO-only rows in master index: {result['total_echo_only_rows']}",
+        f"- Unique registry_ids among those rows: {result['total_echo_only_unique_ids']}",
+        f"- Duplicate-row gap (rows minus unique IDs): {result['duplicate_row_gap']}",
+    ]
+    if result["duplicate_row_gap"] != 0:
+        lines.append(
+            f"  **NONZERO — this means {result['duplicate_row_gap']} rows share a registry_id "
+            f"with another row in this ECHO-only bucket. Run check_duplicate_ids.py before "
+            f"trusting any count from the master index build, not just this one.**"
+        )
+    lines += [
+        "",
+        f"- Found in FRS's full national extract (unique IDs): {result['found_in_national_frs']}",
         f"- NOT found in FRS's full national extract at all: {result['not_found_in_national_frs']}",
         f"- Found under a TARGET state (TX/PA/NM/ME) — should be 0; nonzero means a bug in the state filter or join, not a data characteristic: {result['found_under_target_state']}",
         f"- Found under a different (non-target) state: {result['found_under_other_state']}",

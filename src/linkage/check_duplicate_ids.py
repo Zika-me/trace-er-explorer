@@ -36,14 +36,29 @@ def check_duplicate_ids(df: pd.DataFrame, id_col: str) -> dict:
     unique_ids exactly — this is a mathematical identity, checked by
     a dedicated test rather than assumed.
     """
-    ids = df[id_col].astype(str)
-    counts = ids.value_counts()
+    total_rows = len(df)
+    raw = df[id_col]
+    null_id_count = int(raw.isna().sum())
+
+    non_null = raw.dropna().astype(str)
+    counts = non_null.value_counts()
     duplicated = counts[counts > 1]
+    unique_non_null_ids = int(non_null.nunique())
+    extra_rows_from_duplicates = int((duplicated - 1).sum()) if len(duplicated) else 0
+
+    accounted_rows = null_id_count + unique_non_null_ids + extra_rows_from_duplicates
+    assert accounted_rows == total_rows, (
+        f"Accounting identity failed: {null_id_count} + {unique_non_null_ids} + "
+        f"{extra_rows_from_duplicates} = {accounted_rows}, expected {total_rows}. "
+        f"This should be mathematically impossible — investigate immediately."
+    )
+
     return {
-        "total_rows": len(df),
-        "unique_ids": int(ids.nunique()),
+        "total_rows": total_rows,
+        "null_id_count": null_id_count,
+        "unique_non_null_ids": unique_non_null_ids,
         "duplicate_id_count": int(len(duplicated)),
-        "extra_rows_from_duplicates": int((duplicated - 1).sum()) if len(duplicated) else 0,
+        "extra_rows_from_duplicates": extra_rows_from_duplicates,
         "sample_duplicated_ids": duplicated.head(10).to_dict(),
     }
 
@@ -76,6 +91,12 @@ def write_report(
         lines.append("")
         for k, v in result.items():
             lines.append(f"- {k}: {v}")
+        if result["null_id_count"] > 0:
+            lines.append(
+                f"  **{result['null_id_count']} rows have a BLANK/missing ID — these have "
+                f"no usable identifier at all, which is different from and likely more "
+                f"important than duplication.**"
+            )
         if result["duplicate_id_count"] > 0:
             lines.append(
                 f"  **{result['duplicate_id_count']} distinct IDs appear more than once, "

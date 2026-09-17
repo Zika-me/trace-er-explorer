@@ -9,7 +9,8 @@ the ECHO-only bucket where the gap was first noticed.
 ## FRS interim table (key: registry_id)
 
 - total_rows: 526992
-- unique_ids: 526992
+- null_id_count: 0
+- unique_non_null_ids: 526992
 - duplicate_id_count: 0
 - extra_rows_from_duplicates: 0
 - sample_duplicated_ids: {}
@@ -17,15 +18,19 @@ the ECHO-only bucket where the gap was first noticed.
 ## ECHO interim table (key: registry_id)
 
 - total_rows: 311717
-- unique_ids: 311276
+- null_id_count: 441
+- unique_non_null_ids: 311276
 - duplicate_id_count: 0
 - extra_rows_from_duplicates: 0
 - sample_duplicated_ids: {}
+  **441 rows have a BLANK/missing ID — these have no usable identifier at all, which is different from and likely more important than duplication.**
 
 ## Master facility index (key: master_id)
 
 - total_rows: 528360
-- unique_ids: 527919
+- null_id_count: 441
+- unique_non_null_ids: 527919
 - duplicate_id_count: 0
 - extra_rows_from_duplicates: 0
 - sample_duplicated_ids: {}
+  **441 rows have a BLANK/missing ID — these have no usable identifier at all, which is different from and likely more important than duplication.**
