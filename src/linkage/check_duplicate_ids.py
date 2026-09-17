@@ -25,6 +25,7 @@ from common import logger  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRS_INTERIM = REPO_ROOT / "data" / "interim" / "frs_facility_site.csv"
 ECHO_INTERIM = REPO_ROOT / "data" / "interim" / "echo_facility_summary.csv"
+TRI_INTERIM = REPO_ROOT / "data" / "interim" / "tri_facility.csv"
 MASTER_INDEX = REPO_ROOT / "data" / "processed" / "master_facility_index.csv"
 VALIDATION_DIR = REPO_ROOT / "validation"
 
@@ -68,25 +69,19 @@ def get_rows_for_id(df: pd.DataFrame, id_col: str, target_id: str) -> pd.DataFra
     return df[df[id_col].astype(str) == str(target_id)]
 
 
-def write_report(
-    frs_result: dict, echo_result: dict, master_result: dict, sample_text: str, out_path: Path
-) -> None:
+def write_report(results: list[tuple[str, dict]], sample_text: str, out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# Duplicate ID Diagnostic Report",
         "",
-        "Triggered by an arithmetic gap in the ECHO-only diagnostic (1,368 rows",
-        "vs 928 unique IDs found+not_found). Checks whether duplicate keys exist",
-        "in FRS, ECHO, or the master index — and, if in FRS or ECHO, whether they",
-        "could also be inflating the 'both' and 'frs_only' match counts, not just",
-        "the ECHO-only bucket where the gap was first noticed.",
+        "Checks whether duplicate keys exist in FRS, ECHO, TRI, or the master",
+        "index — originally triggered by the ECHO-only 440-row gap (which turned",
+        "out to be null IDs, not duplicates), extended to TRI after",
+        "a real 3-way master index build showed a 40-row gap unexplained by the",
+        "null-ID fix alone.",
         "",
     ]
-    for label, result in [
-        ("FRS interim table (key: registry_id)", frs_result),
-        ("ECHO interim table (key: registry_id)", echo_result),
-        ("Master facility index (key: master_id)", master_result),
-    ]:
+    for label, result in results:
         lines.append(f"## {label}")
         lines.append("")
         for k, v in result.items():
@@ -114,33 +109,36 @@ def write_report(
 
 
 def main() -> None:
-    for path in [FRS_INTERIM, ECHO_INTERIM, MASTER_INDEX]:
+    for path in [FRS_INTERIM, ECHO_INTERIM, TRI_INTERIM, MASTER_INDEX]:
         if not path.exists():
             raise FileNotFoundError(f"{path} not found. Run the earlier pipeline steps first.")
 
     frs = pd.read_csv(FRS_INTERIM, dtype=str, low_memory=False)
     echo = pd.read_csv(ECHO_INTERIM, dtype=str, low_memory=False)
+    tri = pd.read_csv(TRI_INTERIM, dtype=str, low_memory=False)
     master = pd.read_csv(MASTER_INDEX, dtype=str, low_memory=False)
 
-    frs_result = check_duplicate_ids(frs, "registry_id")
-    echo_result = check_duplicate_ids(echo, "registry_id")
-    master_result = check_duplicate_ids(master, "master_id")
+    sources = [
+        ("FRS interim table (key: registry_id)", frs, "registry_id"),
+        ("ECHO interim table (key: registry_id)", echo, "registry_id"),
+        ("TRI interim table (key: epa_registry_id)", tri, "epa_registry_id"),
+        ("Master facility index (key: master_id)", master, "master_id"),
+    ]
 
-    logger.info("FRS duplicate check: %s", frs_result)
-    logger.info("ECHO duplicate check: %s", echo_result)
-    logger.info("Master index duplicate check: %s", master_result)
+    results = []
+    for label, df, id_col in sources:
+        result = check_duplicate_ids(df, id_col)
+        logger.info("%s duplicate check: %s", label, result)
+        results.append((label, result))
 
     sample_text = ""
-    for label, df, result, id_col in [
-        ("FRS", frs, frs_result, "registry_id"),
-        ("ECHO", echo, echo_result, "registry_id"),
-    ]:
+    for (label, df, id_col), (_, result) in zip(sources, results):
         if result["sample_duplicated_ids"]:
             first_dup_id = list(result["sample_duplicated_ids"].keys())[0]
             rows = get_rows_for_id(df, id_col, first_dup_id)
             sample_text += f"\n### {label} — all rows sharing ID {first_dup_id}\n\n```\n{rows.to_string()}\n```\n"
 
-    write_report(frs_result, echo_result, master_result, sample_text, VALIDATION_DIR / "duplicate_id_diagnostic_report.md")
+    write_report(results, sample_text, VALIDATION_DIR / "duplicate_id_diagnostic_report.md")
 
 
 if __name__ == "__main__":

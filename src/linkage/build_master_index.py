@@ -19,6 +19,9 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ingest"))
 import common  # noqa: E402
 from common import haversine_distance_km, logger  # noqa: E402
+import fetch_frs  # noqa: E402
+import fetch_echo  # noqa: E402
+import fetch_tri  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRS_INTERIM = REPO_ROOT / "data" / "interim" / "frs_facility_site.csv"
@@ -49,6 +52,12 @@ def load_interim_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     frs = pd.read_csv(FRS_INTERIM, dtype=str, low_memory=False)
     echo = pd.read_csv(ECHO_INTERIM, dtype=str, low_memory=False)
     tri = pd.read_csv(TRI_INTERIM, dtype=str, low_memory=False)
+
+    # Freshness check
+    common.check_interim_freshness(list(frs.columns), list(fetch_frs.COLUMN_CANDIDATES.keys()), "FRS")
+    common.check_interim_freshness(list(echo.columns), list(fetch_echo.ALL_COLUMN_CANDIDATES.keys()), "ECHO")
+    common.check_interim_freshness(list(tri.columns), list(fetch_tri.COLUMN_CANDIDATES.keys()), "TRI")
+
     return frs, echo, tri
 
 
@@ -223,13 +232,17 @@ def build_master_index(merged: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     coord_cols = df.apply(choose_best_coordinate, axis=1)
     df = pd.concat([df, coord_cols], axis=1)
 
-    # Presence is determined by checking a required, always-populated
-    # field per source (facility_name is required by every connector)
-    # rather than combining the two separate _merge/_merge_tri
-    # indicator columns' combinatorics.
-    frs_present = df["facility_name_frs"].notna() if "facility_name_frs" in df.columns else pd.Series(False, index=df.index)
-    echo_present = df["facility_name_echo"].notna() if "facility_name_echo" in df.columns else pd.Series(False, index=df.index)
-    tri_present = df["facility_name_tri"].notna() if "facility_name_tri" in df.columns else pd.Series(False, index=df.index)
+    if "_merge" in df.columns:
+        frs_present = df["_merge"].isin(["both", "left_only"])
+        echo_present = df["_merge"].isin(["both", "right_only"])
+    else:
+        frs_present = pd.Series(False, index=df.index)
+        echo_present = pd.Series(False, index=df.index)
+
+    if "_merge_tri" in df.columns:
+        tri_present = df["_merge_tri"].isin(["both", "right_only"])
+    else:
+        tri_present = pd.Series(False, index=df.index)
 
     def sources_label(row_idx):
         parts = []

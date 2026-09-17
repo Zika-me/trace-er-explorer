@@ -14,10 +14,9 @@ Generated automatically by `build_master_index.py`.
 
 ## Final three-way source breakdown (FRS + ECHO + TRI, after TRI is added)
 
-- (none — should not happen): 791
 - ECHO: 927
-- FRS: 215839
-- FRS,ECHO: 302065
+- FRS: 216628
+- FRS,ECHO: 302067
 - FRS,ECHO,TRI: 8322
 - FRS,TRI: 15
 - TRI: 24
