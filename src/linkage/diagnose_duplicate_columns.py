@@ -25,9 +25,25 @@ def find_duplicate_columns(columns: list[str]) -> dict[str, int]:
     return {name: n for name, n in counts.items() if n > 1}
 
 
+# Fields expected to be fully suffixed (_frs/_echo/_tri) by this point in
+# the pipeline.
+SUSPECT_BARE_NAMES = ["latitude", "longitude", "coord_accuracy_value", "coord_collect_method", "coord_datum"]
+
+
+def check_bare_survivors(columns: list[str], names: list[str] = SUSPECT_BARE_NAMES) -> list[str]:
+    """Pure function: which of `names` appear, unsuffixed, in `columns`."""
+    return [n for n in names if n in columns]
+
+
 def report_stage(label: str, columns: list[str]) -> None:
     dupes = find_duplicate_columns(columns)
-    status = f"DUPLICATES FOUND: {dupes}" if dupes else "clean"
+    bare_survivors = check_bare_survivors(columns)
+    status_parts = []
+    if dupes:
+        status_parts.append(f"DUPLICATES: {dupes}")
+    if bare_survivors:
+        status_parts.append(f"BARE SURVIVOR (unsuffixed, will collide later): {bare_survivors}")
+    status = "; ".join(status_parts) if status_parts else "clean"
     print(f"{label}: {len(columns)} columns — {status}")
 
 
