@@ -128,6 +128,16 @@ sources:
       a single efservice URL have been reported to silently drop rows
       — prefer querying tables separately and joining in pandas over
       relying on a chained URL for the actual data pull.
+    # Release-quantity data (the actual TRI analytical payload).
+    efservice_table_releases: "MV_TRI_BASIC_DOWNLOAD"
+    efservice_releases_verified: "2026-09-17"
+    efservice_releases_url_pattern: "{base}/MV_TRI_BASIC_DOWNLOAD/st/{state}/year/{year}/CSV"
+    efservice_releases_notes: >
+      One row per chemical per facility per year (not one row per
+      facility) — a facility reporting 3 chemicals in one year appears
+      as 3 rows. Column names contain spaces and special characters
+      (e.g. "frs id", "cas#", "6.2 - m41") — never reference these as
+      Python attributes, only as exact string keys.
 
   maine_dep:
     label: "Maine DEP Maps and Data"
