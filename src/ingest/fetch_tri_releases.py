@@ -1,6 +1,50 @@
 """
 TRACE-ER Explorer — EPA TRI release-quantity connector.
 
+This is the piece the earlier fetch_tri.py connector explicitly deferred:
+actual chemical release quantities, not just facility identity. Confirmed
+via MV_TRI_BASIC_DOWNLOAD on the Envirofacts efservice API — the same
+API fetch_tri.py uses, but this table is what backs EPA's public "TRI
+Basic Data Files" product (whose web download button is JavaScript-only,
+with no static URL — see fetch_tri.py's docstring for that history).
+
+Verified 2026-09-17 via four independent live search results that
+returned REAL fetched data (not documentation) from queries in the
+form `MV_TRI_BASIC_DOWNLOAD/st/{STATE}/year/{YEAR}/CSV`, giving a
+confirmed ~122-column header. COLUMN_CANDIDATES below maps a curated,
+high-value subset of these — the aggregate release figures, chemical
+identity, and hazard flags — not all 122. The ~90 granular per-method
+waste-transfer breakdown columns (e.g. "6.2 - m41", "8.1a - on-site
+contained") are documented in docs/Data_Dictionary.md but not
+individually extracted; add them later if Step 6 feature engineering
+needs that granularity.
+
+IMPORTANT — one row per chemical per facility per year, not one row
+per facility. A facility reporting 3 chemicals in one year appears as
+3 rows. This is structurally different from fetch_tri.py's
+tri_facility connector (one row per facility) and from FRS/ECHO.
+
+IMPORTANT — column names contain spaces and special characters (e.g.
+"frs id", "cas#", "6.2 - m41"). These are read and matched as exact
+string keys throughout — never referenced as Python attributes.
+
+Same two documented efservice gotchas as fetch_tri.py apply here and
+are defended against the same way:
+1. An unrecognized filter column is silently ignored, returning the
+   full unfiltered table instead of erroring — verified via
+   common.verify_filtered_count() before trusting any pull.
+2. Chained multi-table joins can silently drop rows — this connector
+   queries MV_TRI_BASIC_DOWNLOAD alone, no chaining.
+
+This connector loops over MULTIPLE YEARS (2019-2025, the project's
+frozen analytical period) for each of the 4 target states — up to 28
+separate queries, each preceded by 2 COUNT checks. A single bad
+state-year combination is logged and skipped rather than aborting the
+entire run, since the cost of re-running 27 successful queries to
+retry one failure would be substantial.
+
+Run this from an environment with real internet access.
+
 Usage:
     python src/ingest/fetch_tri_releases.py
 """
@@ -33,6 +77,10 @@ SOURCE_VOLUME_LOG = REPO_ROOT / "validation" / "source_volume_log.csv"
 TARGET_STATES = ["TX", "PA", "NM", "ME"]
 
 ANALYTICAL_YEARS = list(range(2019, 2026))  # 2019 through 2025 inclusive
+
+# Retry/backoff for transient network failures.
+MAX_RETRIES = 3
+RETRY_BACKOFF_SECONDS = 5  # doubles each retry: 5, 10, 20
 
 REQUIRED_FIELDS = {"reporting_year", "tri_facility_id", "state", "chemical_or_parameter"}
 
@@ -121,6 +169,32 @@ def fetch_state_year_releases(base_url: str, table: str, state: str, year: int) 
     return df
 
 
+def fetch_with_retry(
+    base_url: str, table: str, state: str, year: int,
+    max_retries: int = MAX_RETRIES, backoff_seconds: int = RETRY_BACKOFF_SECONDS,
+) -> pd.DataFrame:
+    """
+    Wraps fetch_state_year_releases with retry-and-backoff for
+    transient failures (connection resets, timeouts, DNS hiccups).
+    """
+    last_exc = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return fetch_state_year_releases(base_url, table, state, year)
+        except ValueError:
+            raise  # confirmed data/logic result, not transient — do not retry
+        except Exception as exc:  # noqa: BLE001 — deliberately broad: network faults take many forms
+            last_exc = exc
+            if attempt < max_retries:
+                backoff = backoff_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "Attempt %d/%d failed for st=%s year=%d: %s. Retrying in %ds.",
+                    attempt, max_retries, state, year, exc, backoff,
+                )
+                time.sleep(backoff)
+    raise last_exc
+
+
 def resolve_and_standardize(df: pd.DataFrame) -> dict:
     """
     function: resolve confirmed columns and rename to standardized
@@ -168,10 +242,11 @@ def main() -> None:
             else:
                 logger.info("[%d/%d] Fetching st=%s year=%d", combo_num, total_combos, state, year)
                 try:
-                    df = fetch_state_year_releases(base_url, table, state, year)
+                    df = fetch_with_retry(base_url, table, state, year)
                 except Exception as exc:  # noqa: BLE001 — deliberately broad: one bad combo must not abort the run
-                    logger.error("FAILED for st=%s year=%d: %s. Skipping, continuing with remaining combos.", state, year, exc)
+                    logger.error("FAILED for st=%s year=%d after retries: %s. Skipping, continuing with remaining combos.", state, year, exc)
                     failed_combos.append((state, year, str(exc)))
+                    time.sleep(2)  # brief pause before the next combo, even on final failure
                     continue
 
                 df.to_csv(raw_path, index=False)
