@@ -68,6 +68,11 @@ COLUMN_CANDIDATES = {
 }
 
 
+def raw_path_for(raw_dir: Path, state: str, year: int) -> Path:
+    """Pure function: the on-disk path for one state-year combo's raw pull."""
+    return raw_dir / f"tri_releases_{state}_{year}.csv"
+
+
 def load_tri_config() -> dict:
     with open(CONFIG_PATH) as f:
         config = yaml.safe_load(f)
@@ -141,6 +146,7 @@ def main() -> None:
     all_dfs = []
     per_combo_counts = {}
     failed_combos = []
+    resumed_combos = []
     resolved_example = None
 
     total_combos = len(TARGET_STATES) * len(ANALYTICAL_YEARS)
@@ -149,16 +155,28 @@ def main() -> None:
     for state in TARGET_STATES:
         for year in ANALYTICAL_YEARS:
             combo_num += 1
-            logger.info("[%d/%d] Fetching st=%s year=%d", combo_num, total_combos, state, year)
-            try:
-                df = fetch_state_year_releases(base_url, table, state, year)
-            except Exception as exc:  # noqa: BLE001 — deliberately broad: one bad combo must not abort the run
-                logger.error("FAILED for st=%s year=%d: %s. Skipping, continuing with remaining combos.", state, year, exc)
-                failed_combos.append((state, year, str(exc)))
-                continue
+            raw_path = raw_path_for(RAW_DIR, state, year)
 
-            raw_path = RAW_DIR / f"tri_releases_{state}_{year}.csv"
-            df.to_csv(raw_path, index=False)
+            if raw_path.exists():
+                # Resume support
+                logger.info(
+                    "[%d/%d] st=%s year=%d already cached at %s — skipping fetch, loading from disk.",
+                    combo_num, total_combos, state, year, raw_path,
+                )
+                df = pd.read_csv(raw_path, dtype=str, low_memory=False)
+                resumed_combos.append((state, year))
+            else:
+                logger.info("[%d/%d] Fetching st=%s year=%d", combo_num, total_combos, state, year)
+                try:
+                    df = fetch_state_year_releases(base_url, table, state, year)
+                except Exception as exc:  # noqa: BLE001 — deliberately broad: one bad combo must not abort the run
+                    logger.error("FAILED for st=%s year=%d: %s. Skipping, continuing with remaining combos.", state, year, exc)
+                    failed_combos.append((state, year, str(exc)))
+                    continue
+
+                df.to_csv(raw_path, index=False)
+                time.sleep(1)  # polite pacing against a public government API
+
             per_combo_counts[f"{state}_{year}"] = len(df)
 
             result = resolve_and_standardize(df)
@@ -166,7 +184,11 @@ def main() -> None:
                 resolved_example = result["resolved"]
             all_dfs.append(result["data"])
 
-            time.sleep(1)  # polite pacing against a public government API
+    if resumed_combos:
+        logger.info(
+            "%d of %d combinations were resumed from a previous run's cached files: %s",
+            len(resumed_combos), total_combos, resumed_combos,
+        )
 
     if not all_dfs:
         raise RuntimeError(
@@ -204,6 +226,7 @@ def main() -> None:
             "linked_rows": "",
             "final_unique_entities": "",
             "notes": f"per_combo_counts={per_combo_counts}; failed_combos={failed_combos}; "
+                     f"resumed_from_cache={resumed_combos}; "
                      f"~90 granular per-method waste-transfer columns NOT extracted, see module docstring",
         },
     )
