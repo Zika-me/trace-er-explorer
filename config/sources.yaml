@@ -63,6 +63,29 @@ sources:
     state: "TX"
     required: true
     access_date: null
+    # Access finding, 2026-09-18: the "Production Data Query Dump" that
+    # matches this role most directly is >25GB, delivered via portable
+    # flash drive or cloud service UPON REQUEST (email
+    # digital@rrc.texas.gov) — not a self-service download. Not viable
+    # for this project (no one available to make that manual request).
+    # See texas_rrc_r3_gas_plants below for the dataset used instead.
+    access_status: "NOT_VIABLE_AS_SCOPED"
+
+  texas_rrc_r3_gas_plants:
+    label: "Texas RRC R-3 Gas Processing Plants Report"
+    url: "https://www.rrc.texas.gov/resource-center/research/data-sets-available-for-download/r-3-gas-processing-plants-report"
+    role: "operational_context"
+    state: "TX"
+    required: false  # narrower substitute for texas_rrc_production, which is not viable
+    access_date: "2026-09-18"
+    schema_definition_pdf: "https://www.rrc.texas.gov/media/egmakucr/r-3-dataload-definition.pdf"
+    documented_gotchas: >
+      The real "longitude" field is spelled "Longtitude" in the source
+      JSON — confirmed from RRC's own schema documentation, preserved
+      exactly rather than corrected. Nested sections (Facility
+      Information, Section I, Section III, etc.) are each a list
+      containing exactly one dict, even for single-valued sections —
+      must be indexed defensively, never assumed to be a bare dict.
 
   texas_rrc_gis:
     label: "Texas RRC Public GIS Viewer"
