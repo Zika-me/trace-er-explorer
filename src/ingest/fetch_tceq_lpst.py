@@ -41,9 +41,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BASE_DIR / "data"
 
@@ -98,9 +96,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
 
 def normalize_county(name: object) -> str:
     if pd.isna(name) or str(name).strip() in {"", "nan"}:
@@ -111,10 +106,6 @@ def normalize_county(name: object) -> str:
             s = s[: -len(suffix)].strip()
     return s.replace("-", " ").strip()
 
-
-# ---------------------------------------------------------------------------
-# Step 1: Download
-# ---------------------------------------------------------------------------
 
 def download_lpst(force: bool = False) -> Path:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -128,10 +119,6 @@ def download_lpst(force: bool = False) -> Path:
     log.info("Downloaded %.2f MB → %s", len(r.content) / 1e6, RAW_FILE)
     return RAW_FILE
 
-
-# ---------------------------------------------------------------------------
-# Step 2: Parse
-# ---------------------------------------------------------------------------
 
 def parse_lpst(path: Path) -> pd.DataFrame:
     """
@@ -172,10 +159,6 @@ def parse_lpst(path: Path) -> pd.DataFrame:
 
     return df
 
-
-# ---------------------------------------------------------------------------
-# Step 3: Aggregate to county level
-# ---------------------------------------------------------------------------
 
 def aggregate_to_county(sites: pd.DataFrame) -> pd.DataFrame:
     """One row per county with LPST contamination-burden indicators."""
@@ -232,10 +215,6 @@ def aggregate_to_county(sites: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-# ---------------------------------------------------------------------------
-# Step 4: Join to master index
-# ---------------------------------------------------------------------------
-
 def join_to_master(
     county_features: pd.DataFrame,
     master: pd.DataFrame,
@@ -266,10 +245,6 @@ def join_to_master(
     return master_out, stats
 
 
-# ---------------------------------------------------------------------------
-# Volume log
-# ---------------------------------------------------------------------------
-
 def append_volume_log(total_sites: int, stats: dict) -> None:
     VOL_LOG.parent.mkdir(parents=True, exist_ok=True)
     write_header = not VOL_LOG.exists()
@@ -290,10 +265,6 @@ def append_volume_log(total_sites: int, stats: dict) -> None:
         writer.writerow(row)
     log.info("Logged volume entry → %s", VOL_LOG)
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     # 1. Download
