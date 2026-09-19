@@ -80,14 +80,16 @@ LISTING_PAGE_URL = (
 )
 
 # Matches an href like:
-# https://www.rrc.texas.gov/media/hffk1bkg/r3dataload-july-2026.zip
-# capturing the month and year from the filename itself, not the
-# unpredictable hash segment. Allows either quote style and flexible
-# whitespace around '=', since only the markdown-converted version of
-# this page was verified during development, not the raw HTML — the
-# real anchor tag's exact attribute formatting is unconfirmed.
+#   /media/hffk1bkg/r3dataload-july-2026.zip          (relative — what RRC currently serves)
+#   https://www.rrc.texas.gov/media/.../r3dataload-... (absolute — kept for safety)
+# Captures: (path_or_full_url, month, year)
+# NOTE: RRC's CMS renders hrefs as site-relative paths, not absolute URLs.
+# The base domain is prepended in discover_available_months() below.
+
+_RRC_BASE = "https://www.rrc.texas.gov"
+
 R3_LINK_PATTERN = re.compile(
-    r'href\s*=\s*["\'](https://www\.rrc\.texas\.gov/media/[a-z0-9]+/r3dataload-([a-z]+)-(\d{4})\.zip)["\']',
+    r'href\s*=\s*["\']((https://www\.rrc\.texas\.gov)?/media/[a-z0-9]+/r3dataload-([a-z]+)-(\d{4})\.zip)["\']',
     re.IGNORECASE,
 )
 
@@ -101,10 +103,17 @@ def discover_available_months(listing_page_html: str) -> dict:
     with month lowercased (e.g. "july") and year as a 4-digit string.
 
     Does not attempt to construct URLs from month/year — the hash
-    segment in each URL is assigned by RRC's CMS and is not derivable.
+    slug in each path is CMS-assigned and not derivable.
+
+    Handles both relative (/media/...) and absolute (https://...) hrefs
+    since RRC's CMS has served both at different times.
     """
     matches = R3_LINK_PATTERN.findall(listing_page_html)
-    return {(month.lower(), year): url for url, month, year in matches}
+    result = {}
+    for full_match, maybe_domain, month, year in matches:
+        url = full_match if maybe_domain else _RRC_BASE + full_match
+        result[(month.lower(), year)] = url
+    return result
 
 
 def fetch_month_json(url: str) -> list[dict]:
