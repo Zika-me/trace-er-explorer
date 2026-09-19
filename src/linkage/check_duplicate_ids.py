@@ -1,12 +1,7 @@
 """
 TRACE-ER Explorer — diagnostic: check for duplicate IDs.
 
-This matters well beyond the ECHO-only bucket: if either source has
-duplicate keys for entities that DO match both sources, the "both"
-and "frs_only" counts from build_master_index.py could also be
-inflated. This script checks all three files (FRS interim, ECHO
-interim, and the master index itself) rather than assuming the
-problem is confined to where it was first noticed.
+
 
 Usage:
     python src/linkage/check_duplicate_ids.py
@@ -33,9 +28,7 @@ VALIDATION_DIR = REPO_ROOT / "validation"
 def check_duplicate_ids(df: pd.DataFrame, id_col: str) -> dict:
     """
     Pure function: quantify duplicate key rows in a dataframe.
-    extra_rows_from_duplicates should always equal total_rows minus
-    unique_ids exactly — this is a mathematical identity, checked by
-    a dedicated test rather than assumed.
+
     """
     total_rows = len(df)
     raw = df[id_col]
@@ -76,7 +69,7 @@ def write_report(results: list[tuple[str, dict]], sample_text: str, out_path: Pa
         "",
         "Checks whether duplicate keys exist in FRS, ECHO, TRI, or the master",
         "index — originally triggered by the ECHO-only 440-row gap (which turned",
-        "out to be null IDs, not duplicates), extended to TRI after",
+        "out to be null IDs, not duplicates), extended to TRI on 2026-09-17 after",
         "a real 3-way master index build showed a 40-row gap unexplained by the",
         "null-ID fix alone.",
         "",
@@ -122,6 +115,13 @@ def main() -> None:
         ("FRS interim table (key: registry_id)", frs, "registry_id"),
         ("ECHO interim table (key: registry_id)", echo, "registry_id"),
         ("TRI interim table (key: epa_registry_id)", tri, "epa_registry_id"),
+        # tri_facility_id is TRI's OWN internal identifier — a different
+        # key from epa_registry_id above, and the actual join key used
+        # to link tri_releases.csv to tri_facility.csv. Checked
+        # separately because a duplicate here would directly cause row
+        # multiplication in that join, which the epa_registry_id check
+        # alone would not catch.
+        ("TRI interim table (key: tri_facility_id)", tri, "tri_facility_id"),
         ("Master facility index (key: master_id)", master, "master_id"),
     ]
 
