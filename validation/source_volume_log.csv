@@ -13,3 +13,4 @@ tx_rrc_r3_gas_plants,2026-09-19T05:56:37Z,6343,6343,,,,,"months_covered=[('april
 2026-09-19T08:05:47.277021+00:00,phmsa_pipeline_incidents,1230,"study_states=['ME', 'NM', 'PA', 'TX']; years=2019-2024; county_combos=223; master_rows_with_phmsa=391069"
 2026-09-19T08:54:52.359273+00:00,tceq_lpst_sites,26884,all_historical_records=True; tx_counties_with_lpst=257; master_rows_with_tceq=338683
 2026-09-19T13:09:59.156270+00:00,padep_oil_gas_wells,222649,release=2025_09; conventional+unconventional; pa_counties=57; master_rows_with_padep=75785
+2026-09-19T20:11:15.141022+00:00,nmocd_oil_gas_wells,55572,source=UNM-NHNM-ArcGIS; nm_counties=12; master_rows_with_nmocd=17516
