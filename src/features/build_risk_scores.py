@@ -272,10 +272,31 @@ def compute_composite(
 
 
 def assign_tier(score: pd.Series) -> pd.Series:
+    """
+    Percentile-based tiers — more useful than absolute thresholds for a
+    right-skewed distribution where most facilities score near zero.
+
+    HIGH   : ≥ 90th percentile  (top 10% of facilities)
+    MEDIUM : ≥ 50th percentile  (next 40%)
+    LOW    : <  50th percentile (bottom 50%)
+
+    Raw scores (0-100) are preserved unchanged; tiers provide a practical
+    screening filter for the Power BI dashboard.
+    """
+    p90 = score.quantile(0.90)
+    p50 = score.quantile(0.50)
     tiers = pd.Series("LOW", index=score.index)
-    tiers[score >= TIER_MEDIUM] = "MEDIUM"
-    tiers[score >= TIER_HIGH]   = "HIGH"
+    tiers[score >= p50] = "MEDIUM"
+    tiers[score >= p90] = "HIGH"
     return tiers
+
+
+def compute_percentile_rank(score: pd.Series) -> pd.Series:
+    """
+    Percentile rank (0-100) of each facility within the full dataset.
+    Useful for continuous colour-scaling in Power BI maps.
+    """
+    return score.rank(pct=True).mul(100).round(1)
 
 
 
@@ -313,7 +334,7 @@ CONTEXT_COLS = [
 SCORE_COLS = [
     "compliance_risk_score", "tri_release_score",
     "pipeline_context_score", "state_resource_score",
-    "composite_risk_score", "risk_tier",
+    "composite_risk_score", "composite_percentile_rank", "risk_tier",
 ]
 
 
@@ -379,24 +400,27 @@ def main() -> None:
 
     # ---- Tier ----
     df["risk_tier"] = assign_tier(df["composite_risk_score"])
+    df["composite_percentile_rank"] = compute_percentile_rank(df["composite_risk_score"])
 
     # ---- Statistics ----
     comp = df["composite_risk_score"]
     high_ct   = (df["risk_tier"] == "HIGH").sum()
     med_ct    = (df["risk_tier"] == "MEDIUM").sum()
     low_ct    = (df["risk_tier"] == "LOW").sum()
+    p90 = float(comp.quantile(0.90))
+    p50 = float(comp.quantile(0.50))
     stats = {
         "high_count":    int(high_ct),
         "medium_count":  int(med_ct),
         "low_count":     int(low_ct),
         "composite_mean": float(comp.mean()),
-        "composite_p90":  float(comp.quantile(0.90)),
+        "composite_p90":  p90,
     }
 
-    log.info("Score distribution:")
-    log.info("  HIGH   (≥ %.0f):  %d  (%.1f%%)", TIER_HIGH,   high_ct, 100*high_ct/len(df))
-    log.info("  MEDIUM (%.0f-%.0f): %d  (%.1f%%)", TIER_MEDIUM, TIER_HIGH-1, med_ct, 100*med_ct/len(df))
-    log.info("  LOW    (<  %.0f):  %d  (%.1f%%)", TIER_MEDIUM, low_ct, 100*low_ct/len(df))
+    log.info("Score distribution (percentile-based tiers):")
+    log.info("  HIGH   (≥ P90 = %.2f):  %d  (%.1f%%)", p90, high_ct, 100*high_ct/len(df))
+    log.info("  MEDIUM (P50-P90 = %.2f-%.2f): %d  (%.1f%%)", p50, p90, med_ct, 100*med_ct/len(df))
+    log.info("  LOW    (<  P50 = %.2f):  %d  (%.1f%%)", p50, low_ct, 100*low_ct/len(df))
     log.info("  Mean composite: %.2f  |  P90: %.2f  |  P99: %.2f",
              comp.mean(), comp.quantile(0.90), comp.quantile(0.99))
     log.info("  Compliance  — mean %.2f  P90 %.2f",
