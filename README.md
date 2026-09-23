@@ -2,8 +2,8 @@
 
 **Multi-State Environmental Risk Screening and Remediation Prioritization Prototype**
 
-Status: Pre-build (Week 1 — requirements and repository setup)
-Version target: v1.0
+Status: v1.0 Released (Complete Prototype)
+Version: v1.0
 Document owner: Ngozika Confidence Akosile, Product Owner and Environmental Domain Lead
 
 ## What this is
