@@ -1,0 +1,82 @@
+cff-version: 1.2.0
+message: >-
+  If you use TRACE-ER Explorer or its dataset in your research or work,
+  please cite it using the metadata in this file.
+type: software
+title: TRACE-ER Explorer
+abstract: >-
+  TRACE-ER Explorer is a multi-state environmental risk screening prototype
+  that integrates eight public U.S. federal and state data sources into a
+  single facility-level index covering 527,983 regulated entities across
+  Texas, Pennsylvania, New Mexico, and Maine. It produces a composite risk
+  score for each facility based on EPA compliance history, toxic chemical
+  releases, county-level pipeline incident history, and state-specific
+  resource extraction activity, and delivers results through a Power BI
+  dashboard and open data files.
+authors:
+  - family-names: Akosile
+    given-names: Ngozika Confidence
+    affiliation: TRACE-ER Explorer Project
+    role: Product Owner and Environmental Domain Lead
+  - name: TRACE-ER Explorer Development Team
+version: 1.0.0
+date-released: "2026-09-23"
+license: MIT
+repository-code: https://github.com/Zika-me/trace-er-explorer
+keywords:
+  - environmental risk screening
+  - EPA
+  - ECHO
+  - TRI
+  - PHMSA
+  - pipeline safety
+  - petroleum contamination
+  - oil and gas
+  - Texas
+  - Pennsylvania
+  - New Mexico
+  - Maine
+  - Power BI
+  - open data
+  - facility compliance
+references:
+  - type: data
+    title: EPA Facility Registry Service (FRS)
+    url: https://www.epa.gov/frs
+    publisher:
+      name: U.S. Environmental Protection Agency
+  - type: data
+    title: EPA ECHO Exporter
+    url: https://echo.epa.gov/tools/data-downloads
+    publisher:
+      name: U.S. Environmental Protection Agency
+  - type: data
+    title: EPA Toxics Release Inventory (TRI)
+    url: https://data.epa.gov/efservice/
+    publisher:
+      name: U.S. Environmental Protection Agency
+  - type: data
+    title: PHMSA Pipeline Safety Flagged Incidents
+    url: https://www.phmsa.dot.gov/data-and-statistics/pipeline/distribution-transmission-gathering-lng-and-liquid-accident-and-incident-data
+    publisher:
+      name: U.S. Department of Transportation Pipeline and Hazardous Materials Safety Administration
+  - type: data
+    title: Texas RRC R-3 Gas Processing Plants Report
+    url: https://www.rrc.texas.gov/resource-center/research/data-sets-available-for-download/r-3-gas-processing-plants-report
+    publisher:
+      name: Texas Railroad Commission
+  - type: data
+    title: TCEQ Leaking Petroleum Storage Tanks Database
+    url: https://www.tceq.texas.gov/assets/public/admin/data/docs/lpst.txt
+    publisher:
+      name: Texas Commission on Environmental Quality
+  - type: data
+    title: PA DEP Oil and Gas Well Locations via PASDA
+    url: https://www.pasda.psu.edu/uci/DataSummary.aspx?dataset=1088
+    publisher:
+      name: Pennsylvania Department of Environmental Protection via Pennsylvania Spatial Data Access
+  - type: data
+    title: NM OCD Active Oil and Gas Wells via UNM NHNM
+    url: https://nhnm-gisweb.unm.edu/arcgis/rest/services/NMEDB/ActiveOilandGasWells/MapServer/3
+    publisher:
+      name: New Mexico Oil Conservation Division via University of New Mexico New Mexico Heritage Network

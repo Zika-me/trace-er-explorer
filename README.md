@@ -58,10 +58,6 @@ validation/   validation reports, sensitivity analysis, review records
 
 Full source detail, URLs, and access-date logging rules live in `docs/Source_Register.md`.
 
-## Status
-
-This repository is at the requirements-freeze stage. See `docs/MVP_Requirements_Specification_v1.0.md` for the frozen scope and `docs/White_Paper_Draft_v0.1.md` for the current project narrative. Sample findings, the validation report, and the working dashboard are not yet available — those follow data ingestion, linkage, and scoring, per the 12-week build plan.
-
 ## License and use
 
 Public data sources retain their original licensing and usage terms; see `docs/Source_Register.md` for source-level notes. Add a repository license before public release.
